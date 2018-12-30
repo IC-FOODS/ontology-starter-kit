@@ -1,44 +1,53 @@
-# ontology-starter-kit
+# ontology-development-kit
+
+[![Build Status](https://travis-ci.org/INCATools/ontology-development-kit.svg?branch=master)](https://travis-ci.org/INCATools/ontology-development-kit)
 
 Initialize a GitHub repo for managing your ontology the OBO Library way!
 
-For more details, see this post:
-https://douroucouli.wordpress.com/2015/12/16/creating-an-ontology-project-an-update/
+For more details, see
+
+ * [2018 Article](https://douroucouli.wordpress.com/2018/08/06/new-version-of-ontology-development-kit-now-with-docker-support/)
+ * [ICBO Workshop Slides 2018](https://docs.google.com/presentation/d/1nIybviEEJiRKHO2rkBMZsQ0QjtsHyU01_-9beZqD_Z4/edit?usp=sharing)
+ * [ICBO Workshop Slides 2017](https://docs.google.com/presentation/d/1JPAaDl6Nitxet9NVqWI30eIygcerYAjdMIGmxbRtIn0/edit?usp=sharing)
 
 # Requirements
 
-Any Linux or OS X command line environment should work. You will minimally need the following installed:
+To run this kit to generate a new ontology repo, you will need
 
- * perl
- * git
- * java8
+ 1. [docker](https://www.docker.com/get-docker)
+ 2. A git client
 
-The kit will also try to make an initial ontology release, unless you tell it not to. It will attempt to download the following dependencies:
+It is possible to do this without docker, see below for instructions
 
- * robot
- * owltools
+# Generating an ontology project
 
-# Protocol
+## 1. Download the ontology development kit
 
-## Download this starter package
-
-It's recommended you get a release version: https://github.com/cmungall/ontology-starter-kit/releases
+It's recommended you get a release version: https://github.com/INCATools/ontology-development-kit/releases
 
 ## Initialize
 
-First you must be in the root level of the starter kit
+First you must be in the root level of the kit
 
-    cd ontology-starter-kit
+    cd ontology-development-kit
 
-The `seed-my-ontology-repo.pl` command does everything you need. For help:
+The `seed-via-docker.sh` command does everything you need. For help:
 
-    ./seed-my-ontology-repo.pl  -h
+    ./seed-via-docker.sh  -h
+
+(Windows user: replace `seed-via-docker.sh` with `seed-via-docker.bat`)
+
+The very first time you run this it may be slow, while docker downloads necessary images. Subsequent runs should be much faster!
+
+You can either run the script in interactive mode, or passing details via command line argument
+
+For interactive mode, just run the script without any arguments:
+
+    ./seed-via-docker.sh
 
 An example:
 
-    ./seed-my-ontology-repo.pl  -d po ro pato -u cmungall -t "Triffid Behavior ontology" triffo
-
-You should change `cmungall` to either your username, or (preferably) a GitHub org which you have created.
+    ./seed-via-docker.sh   -d po ro pato -u cmungall -t "Triffid Behavior ontology" triffo
 
 You can list any set of dependencies you like after "-d". However, these must be the official OBO ontology IDs. See http://obofoundry.org for details.
 
@@ -50,12 +59,12 @@ You can customize at this stage, or (recommended) after making an initial push t
 
 ## Push to GitHub
 
-The starter kit will automatically initialize a git project, add all files and commit.
+The development kit will automatically initialize a git project, add all files and commit.
 
 You will need to create a project on GitHub.
 
  1. Go to: https://github.com/new
- 2. The owner MUST be the org you selected with the `-u` option. The MUST be the one you set with `-t`.
+ 2. The owner MUST be the org you selected with the `-u` option. The name MUST be the one you set with `-t`.
  3. Do not initialize with a README (you already have one)
  4. Click Create
  5. See the section under "…or push an existing repository from the command line"
@@ -69,6 +78,24 @@ git push -u origin master
 ```
 
 Note: you can now mv `target/triffid-behavior-ontology` to anywhere you like in your home directory. Or you can do a fresh checkout from github
+
+## Edit and release cycle
+
+In your repo you will see a README-editors.md file that has been customized for your project. Follow these instructions.
+
+Generally the cycle is to:
+
+ - branch
+ - the edit the edit.owl file
+ - make test
+ - git commit
+ - git push
+
+To make a release
+
+`make prepare_release`
+
+Note that any make step can be preceded by run.sh if you have Docker installed
 
 ## OBO Library metadata
 
@@ -91,7 +118,7 @@ See the README-editors.md file that has been generated for your project.
 
 ## Troubleshooting.
 
-If you have issues, file them here: https://github.com/cmungall/ontology-starter-kit/issues
+If you have issues, file them here: https://github.com/INCATools/ontology-development-kit/issues
 
 Some things to check:
 
@@ -109,6 +136,26 @@ used to build the imports. The ones that are there are just examples,
 edit them as you like. See the ROBOT docs and the [OBO
 Tutorial](https://github.com/jamesaoverton/obo-tutorial) for more
 info.
+
+## Adapting an existing ontology repo
+
+The ODK is designed for creating a new repo for a new ontology. It can still be used to help figure out how to migrate an existing github repository to the ODK structure. There are different ways to do this.
+
+ * Manually compare your ontology against the [template](https://github.com/INCATools/ontology-development-kit/tree/master/template) folder and make necessary adjustments
+ * Run the seed script as if creating a new repo. Manually compare this with your existing repo and use `git mv` to rearrange, and adding any missing files by copying them across and doing a `git add`
+ * Create a new repo de novo and abandon your existing one, using github issue mover to move tickets across.
+ 
+Obviously the second method is not ideal as you lose your github history. Note even with `git mv` history tracking becomes harder
+
+If you have built your ontology using a previous version of ODK,
+migration of your setup is unfortunately a manual process. In general
+you do not absolutely *need* to upgrade your setup, but doing so will
+bring advantages in terms of aligning with emerging standards ways of
+doing things. The less customization you do on your repo the easier it
+should be to migrate.
+
+Consult the [Changes.md](Changes.md) file for changes made between
+releases to assist in upgrading.
 
 ## More documentation
 

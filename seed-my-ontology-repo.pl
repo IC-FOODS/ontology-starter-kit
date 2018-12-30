@@ -2,6 +2,7 @@
 
 use strict;
 use File::Find qw(finddepth);
+use File::Path qw( rmtree );
 use File::Basename;
 
 my $n_errors = 0;
@@ -14,7 +15,31 @@ my $clean = 0;
 my $prep_initial_release = 1;
 my $no_commit = 0;
 my $force = 0;
-my $skip_install = 0;
+my $use_docker = 0;
+my $email = "";
+my $interactive = 0;
+
+
+print '           ._____     '; print "\n";
+print '  ____   __| _/  | __ '; print "\n";
+print ' /  _ \ / __ ||  |/ / '; print "\n";
+print '(  <_> ) /_/ ||    <  '; print "\n";
+print ' \____/\____ ||__|_ \ '; print "\n";
+print '            \/     \/ '; print "\n";
+
+
+print "Welcome to the ontology development kit repository creator!\n";
+print "For full instructions, see https://github.com/INCATools/ontology-development-kit!\n\n";
+
+print "ARGUMENTS: [ @ARGV ]\n";
+
+if (scalar(@ARGV) == 0) {
+    print "No arguments specified: entering interactive mode\n";
+    print "If this is not your intention, answer \"!\" to any question to quit.\n";
+    print "Run with -h option for help.\n\n";
+    $interactive = 1;
+}
+
 while (scalar(@ARGV) && $ARGV[0] =~ /^\-/) {
     my $opt = shift @ARGV;
     if ($opt eq '-h' || $opt eq '--help') {
@@ -38,8 +63,14 @@ while (scalar(@ARGV) && $ARGV[0] =~ /^\-/) {
     elsif ($opt eq '-f' || $opt eq '--force') {
         $force = 1;
     }
-    elsif ($opt eq '-s' || $opt eq '--skip-install') {
-        $skip_install = 1;
+    elsif ($opt eq '-D' || $opt eq '--use-docker') {
+        $use_docker = 1;
+    }
+    elsif ($opt eq '-I' || $opt eq '--interactive') {
+        $interactive = 1;
+    }
+    elsif ($opt eq '-e' || $opt eq '--email') {
+        $email = shift @ARGV;
     }
     elsif ($opt eq '--no-release') {
         $prep_initial_release = 0;
@@ -53,18 +84,49 @@ while (scalar(@ARGV) && $ARGV[0] =~ /^\-/) {
         die "$opt";
     }
 }
-my $ontid = shift @ARGV;
-if (!$ontid) {
-    die "MUST SPECIFY AN ONTOLOGY ID.\nRun script with -h for details";
+
+my $ontid;
+
+if ($interactive || (!scalar(@ARGV) && !$title)) {
+    print "================\n";
+    print "INTERACTIVE MODE\n";
+    print "================\n";
+    print "\nEnter '!' as answer to quit and start again\n\n";
+    question(\$ontid,
+             "ontid",
+             "What is the OBO ontology ID / ID prefix of your ontology?",
+             "For example: mp, go, triffo.\nNote that the ID prefix will be auto-capitalized");
+    question(\$title,
+             "title",
+             "What is the name/title of your ontology?",
+             "For example: triffid behavior ontology.\nTwo to three words recommended. This will be used to derive the github repository name");
+    question(\@depends,
+             "dependencies",
+             "What ontologies should be used to make imports (separate list with spaces)?",
+             "For example: 'ro po envo'.\nSee obofoundry.org for a list of ontology ids");
+    question(\$org,
+             "org",
+             "What is the github oranization or username?",
+             "For example: obophenotype, cmungall, geneontology.");
 }
+else {
+    $ontid = shift @ARGV;
+    if (!$ontid) {
+        die "MUST SPECIFY AN ONTOLOGY ID.\nRun script with -h for details";
+    }
+}
+
 $ontid = lc($ontid);
 
 my $prefix = uc($ontid);
 
-
-if ($clean) {
-    `rm -rf target`;
+if (!@depends) {
+    print STDERR "You MUST specify at least one dependency to build an OBO ontology.\n";
+    print STDERR "Note that new dependencies can be added later.\n";
+    print STDERR "If you are unsure, just use 'ro'. This can be specified with the -d option, or in interactive mode.\n";
+    exit 1;
 }
+
 
 if (!$title) {
     $title = $ontid;
@@ -81,6 +143,14 @@ $targetdir =~ tr/a-z\-//cd;
 my $repo_name = $targetdir;
 
 $targetdir = "target/$targetdir";
+
+if ($clean) {
+    print "Cleaning directory..";
+    if (-d "$targetdir") {
+      rmtree $targetdir;
+  }
+}
+
 mkdir("target") unless -d 'target';
 mkdir("$targetdir") unless -d $targetdir;
 
@@ -90,16 +160,45 @@ if (-d "$targetdir/.git") {
     die;
 }
 
+if ($email eq "") {
+    #print STDERR "Must supply email address with -e|--email <email>\n";
+}
+else {
+    runcmd("git config --global user.name $org");
+    runcmd("git config --global user.email $email");
+}
 
 my $TEMPLATEDIR = 'template';
 
 my @files;
-finddepth(sub {
-    return if($_ eq '.' || $_ eq '..');
-    push @files, $File::Find::name;
-          }, 
-          $TEMPLATEDIR
-    );
+#finddepth(sub {
+#    return if($_ eq '.' || $_ eq '..');
+#    push @files, $File::Find::name;
+#},
+#$TEMPLATEDIR
+#);
+
+my @dirs = ($TEMPLATEDIR);
+
+while (@dirs) {
+    my $thisdir = shift @dirs;
+    my $dh;
+	opendir $dh, $thisdir;
+	while (my $entry = readdir $dh) {
+		next if $entry eq '.';
+		next if $entry eq '..';
+
+		my $fullname = "$thisdir/$entry";
+		print "FOUND: $fullname \n";
+
+		if (-d $fullname) {
+			push @dirs, $fullname;
+		} else {
+			push @files, $fullname;
+		}
+	}
+}
+
 #push(@files, "$TEMPLATEDIR/.gitignore");
 
 while (my $f = shift @files) {
@@ -114,6 +213,8 @@ while (my $f = shift @files) {
     }
     $tf = "$targetdir/$tf";
     if ($tf =~ m@MY-IMPORTED@) {
+        # special case: if the filename has MY-IMPORTED in it,
+        # use this as a template to make one file for each ontology dependency
         foreach my $depend (@depends) {
             $_ = $tf;
             s@MY-IMPORTED@$depend@;
@@ -126,17 +227,13 @@ while (my $f = shift @files) {
     }
 }
 
-install() unless $skip_install;
+
 ## NOTE: all ops in this dir from now on
 chdir($targetdir);
 
 runcmd("git init");
 runcmd("git add -A .");
-runcmd("git commit -m 'initial commit of ontology sources of $ontid using ontology-starter-kit' -a") unless $no_commit;
-
-runcmd("mkdir bin") unless -d "bin";
-runcmd("cp ../../bin/* bin/");
-$ENV{PATH} = "$ENV{PATH}:$ENV{PWD}/bin";
+runcmd("git commit -m 'initial commit of ontology sources of $ontid using ontology-development-kit' -a") unless $no_commit;
 
 if ($n_errors) {
     print STDERR "WARNING: encountered errors - the commands below may not work\n";
@@ -144,15 +241,22 @@ if ($n_errors) {
 
 if ($prep_initial_release) {
     print STDERR "Preparing initial release, may take a few minutes, or longer if you depend on large ontologies like chebi\n";
-    my $cmd = "cd src/ontology && make prepare_release && echo SUCCESS || echo FAILURE";
+    my $MAKE = "make prepare_release";
+    if ($use_docker) {
+        $MAKE = "./run.sh $MAKE";
+    }
+    #my $cmd = "cd src/ontology && $MAKE && echo SUCCESS || echo FAILURE";
+    my $cmd = "cd src/ontology && $MAKE";
     runcmd($cmd);
-    
-    runcmd("git add src/ontology/imports/*{obo,owl}") if @depends;
-    runcmd("git add src/ontology/subsets/*{obo,owl}") if -d "src/ontology/subsets";
+
+    runcmd("git add src/ontology/imports/*.{obo,owl}") if @depends;
+    runcmd("git add src/ontology/imports/*.{obo,owl}") if @depends;
+    runcmd("git add src/ontology/subsets/*.{obo,owl}") if -d "src/ontology/subsets";
     runcmd("git add $ontid.{obo,owl}");
-    runcmd("git add imports/*{obo,owl}") if @depends;
-    runcmd("git add subsets/*{obo,owl}") if -d "src/ontology/subsets";
-    runcmd("git commit -m 'initial release of $ontid using ontology-starter-kit' -a") unless $no_commit;
+    runcmd("git add $ontid-base.owl");
+    runcmd("git add imports/*.{obo,owl}") if @depends;
+    runcmd("git add subsets/*.{obo,owl}") if -d "src/ontology/subsets";
+    runcmd("git commit -m 'initial release of $ontid using ontology-development-kit' -a") unless $no_commit;
 }
 
 runcmd("git status");
@@ -180,28 +284,56 @@ print "\n";
 
 exit 0;
 
-sub install {
-    return if -f "bin/apply-pattern.py";
-    runcmd("mkdir bin") unless -d "bin";
-    runcmd("wget http://build.berkeleybop.org/userContent/owltools/owltools -O bin/owltools") unless -f "bin/owltools";
-    runcmd("wget http://build.berkeleybop.org/userContent/owltools/ontology-release-runner -O bin/ontology-release-runner") unless -f "bin/ontology-release-runner";
-    runcmd("wget http://build.berkeleybop.org/userContent/owltools/owltools-runner-all.jar -O bin/owltools-runner-all.jar") unless -f "owltools-runner-all.jar";
-    runcmd("wget http://build.berkeleybop.org/userContent/owltools/owltools-oort-all.jar -O bin/owltools-oort-all.jar") unless -f "owltools-oort-all.jar";
-    runcmd("wget http://build.berkeleybop.org/job/robot/lastSuccessfulBuild/artifact/bin/robot -O bin/robot");
-    runcmd("wget http://build.berkeleybop.org/job/robot/lastSuccessfulBuild/artifact/bin/robot.jar -O bin/robot.jar") unless -f "bin/robot.jar";
-    runcmd("wget --no-check-certificate https://raw.githubusercontent.com/cmungall/pattern2owl/master/apply-pattern.py -O bin/apply-pattern.py");
-    runcmd("chmod +x bin/*");
+sub question {
+    my ($varref, $short, $question, $info) = @_;
+    print "\n$question\n$info\n:: $short > ";
+    my $answered = 0;
+    while (!$answered) {
+        my $answer = <STDIN>;
+        chomp $answer;
+        $answer =~ s@^\s+@@;
+        $answer =~ s@\s+$@@;
 
+        if ($answer =~ m@\!@) {
+            print "QUITTING\n";
+            exit 1;
+        }
+        
+        if (ref $varref eq 'ARRAY') {
+            @$varref = split(' ', $answer);
+        }
+        else {
+            $$varref = $answer;
+        }
+        if ($answer) {
+            print " * $short=\"$answer\"\n";
+            $answered = 1;
+        }
+    }
 }
 
 sub runcmd {
     my $cmd = shift;
+    my $exit_on_fail = shift;
     print "EXECUTING: $cmd\n";
+
+    # not all shells support {...} syntax
+    # we auto-unfold these here
+    # see https://github.com/INCATools/ontology-development-kit/pull/49
+    if ($cmd =~ m@(.*)\{(.*)\}(.*)@) {
+        my ($pre, $matchlist, $post) = ($1,$2,$3);
+        my @expansions = split(/,/, $matchlist);
+        print "Expanded: $matchlist => @expansions\n";
+        foreach (@expansions) {
+            runcmd("$pre$_$post", $exit_on_fail);
+        }
+        return;
+    }
     my $err = system($cmd);
     if ($err) {
         print STDERR "ERROR RUNNING: $cmd\n";
         $n_errors ++;
-        if (!$force) {
+        if (!$force || $exit_on_fail) {
             die "Exiting. Run with '-f' to force execution and ignore errors";
         }
     }
@@ -209,8 +341,8 @@ sub runcmd {
 }
 
 sub copy_template {
-    my $f = shift;
-    my $tf = shift;
+    my $f = shift;   ## source file
+    my $tf = shift;  ## target file
     open(F, "$TEMPLATEDIR/$f") || die $f;
     recursive_mkdir($tf);
     print STDERR "WRITING: $tf\n";
@@ -230,8 +362,12 @@ sub copy_template {
     }
     close(OF);
     close(F);
+    if ($tf =~ m@\.sh$@) {
+        runcmd("chmod +x $tf");
+    }
 }
 
+# replace variable names in template with variable values
 sub replace {
     my $s = shift;
     $s =~ s/foobar/$ontid/g;
@@ -264,24 +400,25 @@ sub usage {
     my $sn = scriptname();
 
     <<EOM;
-$sn [-d IMPORTED-ONTOLOGY-ID]* [-u GITHUB-USER-OR-ORG] [-t TITLE] [-c] ONTOLOGY-ID
+    $sn [-d IMPORTED-ONTOLOGY-ID]* [-u GITHUB-USER-OR-ORG] [-t TITLE] [-c] ONTOLOGY-ID
 
-Generates an ontology repo from templates, into the target/ directory
+    Generates an ontology repo from templates, into the target/ directory
 
-Example:
+    Example:
 
-$sn  -d po -d ro -d pato -u obophenotype -t "Triffid Behavior ontology" triffo
+    $sn  -d po -d ro -d pato -u obophenotype -t "Triffid Behavior ontology" triffo
 
-See http://github.com/cmungall/ontology-starter-kit for details
+    See http://github.com/cmungall/ontology-development-kit for details
 
-Options:
+    Options:
 
- -d ONT1 ONT2 ... : a list of ontology IDs that will form the import modules
- -u USER_OR_ORG   : a GitHub username or organization. 
- -t TITLE         : a descriptive name for your ontology, e.g "Sloth Behavior Ontology"
- -c               : make a clean version
- --no-commit      : do not run the commit operation 
+    -d ONT1 ONT2 ... : a list of ontology IDs that will form the import modules
+    -u USER_OR_ORG   : a GitHub username or organization.
+    -t TITLE         : a descriptive name for your ontology, e.g "Sloth Behavior Ontology"
+    -c               : make a clean version
+    --no-commit      : do not run the commit operation
+
+    Note the title is used to determine the repo/folder name, e.g. sloth-behavior-ontology
 
 EOM
 }
-
